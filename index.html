@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>並列型（フラッシュ型）AD変換器 動作原理学習シミュレーター</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome CDN for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & JetBrains Mono for Code/Engineering Feel -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbar for visual clean look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        .pulse-active {
+            animation: pulse-glow 1.5s infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6)); }
+            50% { opacity: 0.7; filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.2)); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-blue-600 rounded-lg text-white shadow-lg shadow-blue-500/30">
+                    <i class="fa-solid font-bold fa-microchip text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-white flex items-center gap-2">
+                        並列型（フラッシュ型）AD変換器 シミュレーター
+                        <span class="text-xs font-normal px-2 py-0.5 bg-blue-900/60 text-blue-300 border border-blue-700/50 rounded-full">高専専門課程向け</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">超高速ADCの動作アルゴリズムと回路ブロックのインタラクティブ視覚化</p>
+                </div>
+            </div>
+            
+            <!-- Quick Keyword Badge Status -->
+            <div class="flex items-center gap-2 text-xs">
+                <span class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-300 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>1. 抵抗分圧回路
+                </span>
+                <span class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-300 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-blue-400"></span>2. コンパレータ
+                </span>
+                <span class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-300 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>3. 優先度エンコーダ
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Layout -->
+    <main class="max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow">
+
+        <!-- Left Controls & Stepper Column (4 Cols) -->
+        <div class="lg:col-span-4 flex flex-col gap-5">
+            
+            <!-- Control Panel Card -->
+            <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
+                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-blue-400"></i> パラメータ設定
+                </h2>
+
+                <div class="space-y-5">
+                    <!-- Resolution Bits Slider -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-sm font-medium text-slate-200">分解能 ($N$ ビット)</label>
+                            <span id="bit-val" class="mono text-sm font-bold text-blue-400 bg-blue-950/80 px-2.5 py-0.5 border border-blue-800 rounded">3 bit (8階調)</span>
+                        </div>
+                        <input id="bit-input" type="range" min="2" max="4" step="1" value="3" 
+                            class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        <div class="flex justify-between text-xs text-slate-500 mt-1">
+                            <span>2 bit (3コンパレータ)</span>
+                            <span>3 bit (7)</span>
+                            <span>4 bit (15)</span>
+                        </div>
+                    </div>
+
+                    <!-- Reference Voltage (Vref) -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-sm font-medium text-slate-200">基準電圧 ($V_{ref}$)</label>
+                            <span id="vref-val" class="mono text-sm font-bold text-amber-400 bg-amber-950/80 px-2.5 py-0.5 border border-amber-800 rounded">5.00 V</span>
+                        </div>
+                        <input id="vref-input" type="range" min="1" max="10" step="0.5" value="5" 
+                            class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
+                    </div>
+
+                    <!-- Input Analog Voltage (Vin) -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-sm font-medium text-slate-200">アナログ入力電圧 ($V_{in}$)</label>
+                            <span id="vin-val" class="mono text-sm font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 border border-emerald-800 rounded">2.80 V</span>
+                        </div>
+                        <input id="vin-input" type="range" min="0" max="5" step="0.05" value="2.8" 
+                            class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                        <div class="mt-2 flex items-center justify-between text-xs text-slate-400">
+                            <span>量子化幅 LSB ($\Delta V$):</span>
+                            <span id="lsb-val" class="mono font-semibold text-slate-200">0.625 V</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step Navigation Card -->
+            <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl flex-grow flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center justify-between">
+                        <span class="flex items-center gap-2"><i class="fa-solid fa-list-check text-blue-400"></i> 変換ステップの視覚化</span>
+                        <span id="step-counter" class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">全工程リアルタイム表示</span>
+                    </h2>
+
+                    <!-- Step Selection Buttons -->
+                    <div class="grid grid-cols-4 gap-2 mb-4">
+                        <button id="btn-step-0" onclick="setStep(0)" class="step-btn py-2 px-1 text-xs font-medium rounded-lg border transition flex flex-col items-center justify-center gap-1 bg-blue-600 border-blue-500 text-white shadow-lg">
+                            <i class="fa-solid fa-eye"></i> 全体表示
+                        </button>
+                        <button id="btn-step-1" onclick="setStep(1)" class="step-btn py-2 px-1 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white transition flex flex-col items-center justify-center gap-1">
+                            <i class="fa-solid fa-bolt"></i> STEP 1
+                        </button>
+                        <button id="btn-step-2" onclick="setStep(2)" class="step-btn py-2 px-1 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white transition flex flex-col items-center justify-center gap-1">
+                            <i class="fa-solid fa-scale-balanced"></i> STEP 2
+                        </button>
+                        <button id="btn-step-3" onclick="setStep(3)" class="step-btn py-2 px-1 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white transition flex flex-col items-center justify-center gap-1">
+                            <i class="fa-solid fa-code-branch"></i> STEP 3
+                        </button>
+                    </div>
+
+                    <!-- Dynamic Explanation Container -->
+                    <div id="step-explanation" class="p-4 bg-slate-950/80 border border-slate-800 rounded-lg text-xs leading-relaxed text-slate-300 space-y-2 min-h-[160px]">
+                        <!-- JS injected tutorial content -->
+                    </div>
+                </div>
+
+                <!-- Live Digital Output Result Display -->
+                <div class="mt-4 pt-4 border-t border-slate-800">
+                    <div class="bg-gradient-to-r from-blue-950/50 via-slate-900 to-indigo-950/50 p-3 rounded-lg border border-blue-900/50">
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wide mb-1">最終デジタル出力 (Digital Output)</div>
+                        <div class="flex items-baseline justify-between">
+                            <div class="flex items-baseline gap-2">
+                                <span id="out-binary" class="mono text-2xl font-bold text-blue-400 tracking-wider">100₂</span>
+                                <span id="out-decimal" class="text-xs text-slate-400">(10進数: <span class="mono font-semibold text-slate-200">4</span>)</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[10px] text-slate-500 block">再現アナログ電圧</span>
+                                <span id="out-voltage" class="mono text-xs font-bold text-emerald-400">2.50 V</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Right Interactive Schematic Diagram Area (8 Cols) -->
+        <div class="lg:col-span-8 flex flex-col gap-5">
+            
+            <!-- Interactive Circuit Canvas -->
+            <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl flex flex-col h-full min-h-[520px]">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-diagram-project text-blue-400"></i> 回路図 & 内部信号視覚化 (Schematic)
+                    </h2>
+                    <div class="flex items-center gap-3 text-xs">
+                        <span class="flex items-center gap-1 text-emerald-400"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> HIGH (1)</span>
+                        <span class="flex items-center gap-1 text-slate-400"><span class="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block"></span> LOW (0)</span>
+                    </div>
+                </div>
+
+                <!-- Circuit Container SVG Area -->
+                <div id="circuit-container" class="relative flex-grow bg-slate-950 border border-slate-800 rounded-lg p-2 overflow-auto flex items-center justify-center">
+                    <svg id="circuit-svg" class="w-full h-full min-w-[650px] min-h-[480px]" viewBox="0 0 800 550">
+                        <!-- SVG Dynamic content populated by JavaScript -->
+                    </svg>
+                </div>
+            </section>
+
+            <!-- Engineering Concepts & Kosen Deep-Dive Note -->
+            <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
+                <h3 class="text-sm font-semibold text-slate-200 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-graduation-cap text-amber-400"></i> 高専生向け技術解説：フラッシュ型ADCの特徴と課題
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400">
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                        <span class="font-semibold text-blue-300 block mb-1">① 圧倒的変換速度（1 Clock）</span>
+                        クロック1周期（1回の同時比較）でデジタル変換が完了します。SAR型（逐次比較型）や積分型のようにカウントや繰り返しループが存在しないため、ギガヘルツ（GHz）動作するオシロスコープ等で必須です。
+                    </div>
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                        <span class="font-semibold text-amber-300 block mb-1">② 回路規模の爆発（$2^N - 1$）</span>
+                        分解能 $N$ に対し必要なコンパレータ数が指数関数的（$2^N - 1$）に増大します。
+                        <span class="mono text-[11px] text-amber-400 block mt-1">4bit:15個 / 8bit:255個 / 10bit:1023個</span>
+                        これがIC化における最大消費電力・面積のボトルネックとなります。
+                    </div>
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                        <span class="font-semibold text-emerald-300 block mb-1">③ サーモメータコードの利点</span>
+                        コンパレータ群の出力は下から連続して1が並ぶ「温度計コード」になります。入力過大やノイズで1ビット反転（バブルエラー）が起きても優先度エンコーダで補正しやすく、グリッチ（髭ノイズ）が出にくい特徴を持ちます。
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 bg-slate-900/50 py-3 text-center text-xs text-slate-500">
+        <p>並列型（フラッシュ型）AD変換器 原理学習教材 | 電気・電子工学 / 電子回路 実習補助ツール</p>
+    </footer>
+
+    <script>
+        // State variables
+        let state = {
+            bits: 3,
+            vref: 5.0,
+            vin: 2.8,
+            currentStep: 0 // 0: All, 1: Resistor Ladder, 2: Comparators, 3: Encoder
+        };
+
+        // DOM Elements
+        const bitInput = document.getElementById('bit-input');
+        const vrefInput = document.getElementById('vref-input');
+        const vinInput = document.getElementById('vin-input');
+
+        const bitVal = document.getElementById('bit-val');
+        const vrefVal = document.getElementById('vref-val');
+        const vinVal = document.getElementById('vin-val');
+        const lsbVal = document.getElementById('lsb-val');
+
+        const outBinary = document.getElementById('out-binary');
+        const outDecimal = document.getElementById('out-decimal');
+        const outVoltage = document.getElementById('out-voltage');
+
+        const stepExplanation = document.getElementById('step-explanation');
+        const stepCounter = document.getElementById('step-counter');
+
+        // Initialize Listeners
+        bitInput.addEventListener('input', (e) => {
+            state.bits = parseInt(e.target.value);
+            // Ensure Vin does not exceed current Vref
+            if (state.vin > state.vref) state.vin = state.vref;
+            vinInput.max = state.vref;
+            updateUI();
+        });
+
+        vrefInput.addEventListener('input', (e) => {
+            state.vref = parseFloat(e.target.value);
+            vinInput.max = state.vref;
+            if (state.vin > state.vref) {
+                state.vin = state.vref;
+                vinInput.value = state.vref;
+            }
+            updateUI();
+        });
+
+        vinInput.addEventListener('input', (e) => {
+            state.vin = parseFloat(e.target.value);
+            updateUI();
+        });
+
+        function setStep(step) {
+            state.currentStep = step;
+            
+            // Update button styles
+            for (let i = 0; i <= 3; i++) {
+                const btn = document.getElementById(`btn-step-${i}`);
+                if (i === step) {
+                    btn.className = "step-btn py-2 px-1 text-xs font-medium rounded-lg border border-blue-500 bg-blue-600 text-white shadow-lg transition flex flex-col items-center justify-center gap-1";
+                } else {
+                    btn.className = "step-btn py-2 px-1 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white transition flex flex-col items-center justify-center gap-1";
+                }
+            }
+
+            updateStepExplanation();
+            renderCircuit();
+        }
+
+        function updateStepExplanation() {
+            const numLevels = Math.pow(2, state.bits);
+            const numComparators = numLevels - 1;
+            const lsb = state.vref / numLevels;
+            const digitalVal = Math.min(Math.floor(state.vin / lsb), numLevels - 1);
+
+            let html = "";
+
+            switch (state.currentStep) {
+                case 0:
+                    stepCounter.textContent = "全体像の俯瞰モード";
+                    html = `
+                        <div class="font-semibold text-blue-400 mb-1"><i class="fa-solid fa-layer-group"></i> 全系動作概要</div>
+                        並列型AD変換器は、アナログ入力信号 <span class="mono font-semibold text-emerald-400">${state.vin.toFixed(2)}V</span> を一瞬でデジタル変換します。<br/>
+                        全 <span class="mono font-semibold text-amber-400">${numComparators}個</span> のコンパレータが同時に比較処理を行うため、クロック1発で変換が完了します。左のスライダで $V_{in}$ を動かすと、リアルタイムの信号変化を確認できます。
+                    `;
+                    break;
+                case 1:
+                    stepCounter.textContent = "STEP 1/3: 抵抗分圧回路";
+                    html = `
+                        <div class="font-semibold text-emerald-400 mb-1"><i class="fa-solid fa-bolt"></i> キーワード1: 抵抗分圧回路（基準電圧ネットワーク）</div>
+                        基準電圧 $V_{ref} = ${state.vref.toFixed(2)}\\text{V}$ を等しい抵抗 $R$（全 ${numLevels} 個）で細かく分圧します。<br/>
+                        1 LSB（量子化ステップ幅）は $\\Delta V = \\frac{V_{ref}}{2^N} = \\frac{${state.vref.toFixed(2)}}{${numLevels}} = \\mathbf{${lsb.toFixed(3)}\\text{V}}$ です。<br/>
+                        これにより、コンパレータのマイナス端子側に ${numComparators} 段階のしきい値電圧（$V_{th1} \\sim V_{th${numComparators}}$）を常時生成します。
+                    `;
+                    break;
+                case 2:
+                    stepCounter.textContent = "STEP 2/3: コンパレータ群の比較";
+                    html = `
+                        <div class="font-semibold text-blue-400 mb-1"><i class="fa-solid fa-scale-balanced"></i> キーワード2: コンパレータ（比較器）群</div>
+                        入力電圧 $V_{in} = ${state.vin.toFixed(2)}\\text{V}$ を、全 ${numComparators} 個のコンパレータのプラス端子に一斉に入力します。<br/>
+                        ・ $V_{in} > V_{th}$ の場合 $\\rightarrow$ <span class="text-emerald-400 font-bold">1 (HIGH)</span><br/>
+                        ・ $V_{in} < V_{th}$ の場合 $\\rightarrow$ <span class="text-slate-500 font-bold">0 (LOW)</span><br/>
+                        出力結果は下から1が並ぶ<span class="font-semibold text-blue-300">「サーモメータコード（温度計コード）」</span>になります。<br/>
+                        現在のコンパレータ出力: <span class="mono font-bold text-emerald-400">${getThermometerCodeString()}</span>
+                    `;
+                    break;
+                case 3:
+                    stepCounter.textContent = "STEP 3/3: 優先度エンコーダ";
+                    html = `
+                        <div class="font-semibold text-amber-400 mb-1"><i class="fa-solid fa-code-branch"></i> キーワード3: 優先度エンコーダ（符号器）</div>
+                        コンパレータ群から得られた ${numComparators} ビットのサーモメータコードを組み合わせ論理回路に入力します。<br/>
+                        エンコーダは「1を出力している最高位のコンパレータ」を検出・判別し、対応する <span class="mono font-bold text-blue-400">${state.bits} ビット2進数</span>（${digitalVal.toString(2).padStart(state.bits, '0')}₂）へと一括変換して最終出力とします。
+                    `;
+                    break;
+            }
+
+            stepExplanation.innerHTML = html;
+        }
+
+        function getThermometerCodeString() {
+            const numLevels = Math.pow(2, state.bits);
+            const numComparators = numLevels - 1;
+            const lsb = state.vref / numLevels;
+            let str = "";
+            for (let i = numComparators; i >= 1; i--) {
+                const vth = lsb * i;
+                str += (state.vin >= vth) ? "1" : "0";
+            }
+            return str;
+        }
+
+        function renderCircuit() {
+            const svg = document.getElementById('circuit-svg');
+            const numLevels = Math.pow(2, state.bits); // e.g. 8 for 3 bits
+            const numComparators = numLevels - 1;       // e.g. 7 for 3 bits
+            const lsb = state.vref / numLevels;
+            const activeLevel = Math.min(Math.floor(state.vin / lsb), numLevels - 1);
+
+            // SVG Viewport configuration
+            const width = 800;
+            const height = Math.max(520, numComparators * 55 + 80);
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+            let svgContent = '';
+
+            // Step highlight logic
+            const highlightResistors = (state.currentStep === 0 || state.currentStep === 1);
+            const highlightComparators = (state.currentStep === 0 || state.currentStep === 2);
+            const highlightEncoder = (state.currentStep === 0 || state.currentStep === 3);
+
+            // Coordinates layout settings
+            const xResistorLine = 120;
+            const xVinLine = 260;
+            const xCompLeft = 320;
+            const xCompRight = 420;
+            const xEncoderLeft = 560;
+            const xEncoderRight = 700;
+
+            const startY = 60;
+            const endY = height - 60;
+            const stepY = (endY - startY) / numLevels;
+
+            // -------------------------------------------------------------
+            // 1. Resistor Ladder (抵抗分圧回路) & Reference Voltage Line
+            // -------------------------------------------------------------
+            const ladderGlow = highlightResistors ? 'stroke="rgba(245, 158, 11, 0.4)" stroke-width="6"' : '';
+            svgContent += `<g id="resistor-ladder">`;
+            
+            // Vref Top Label & Power Node
+            svgContent += `
+                <circle cx="${xResistorLine}" cy="${startY - 20}" r="6" fill="#f59e0b" />
+                <text x="${xResistorLine}" y="${startY - 32}" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="bold" text-anchor="middle">Vref (${state.vref.toFixed(1)}V)</text>
+                <line x1="${xResistorLine}" y1="${startY - 20}" x2="${xResistorLine}" y2="${startY}" stroke="#f59e0b" stroke-width="2.5"/>
+            `;
+
+            // Draw Resistors and Taps
+            for (let i = 0; i < numLevels; i++) {
+                const yTop = startY + i * stepY;
+                const yBottom = startY + (i + 1) * stepY;
+                const yMid = (yTop + yBottom) / 2;
+
+                // Resistor Zigzag symbol
+                const resColor = highlightResistors ? '#f59e0b' : '#475569';
+                svgContent += `
+                    <line x1="${xResistorLine}" y1="${yTop}" x2="${xResistorLine}" y2="${yMid - 12}" stroke="${resColor}" stroke-width="2"/>
+                    <path d="M ${xResistorLine} ${yMid - 12} 
+                             L ${xResistorLine - 6} ${yMid - 8} 
+                             L ${xResistorLine + 6} ${yMid - 4} 
+                             L ${xResistorLine - 6} ${yMid} 
+                             L ${xResistorLine + 6} ${yMid + 4} 
+                             L ${xResistorLine - 6} ${yMid + 8} 
+                             L ${xResistorLine} ${yMid + 12}" 
+                          fill="none" stroke="${resColor}" stroke-width="2" />
+                    <line x1="${xResistorLine}" y1="${yMid + 12}" x2="${xResistorLine}" y2="${yBottom}" stroke="${resColor}" stroke-width="2"/>
+                    <text x="${xResistorLine - 14}" y="${yMid + 4}" fill="#94a3b8" font-family="JetBrains Mono" font-size="10" text-anchor="end">R</text>
+                `;
+
+                // Internal Node Tap Voltages (for comparators 1 to numComparators)
+                if (i < numComparators) {
+                    const compIndex = numComparators - i; // Top comparator is highest index
+                    const vthVal = lsb * compIndex;
+                    const compY = yBottom;
+
+                    // Tap Connection Wire to Comparator Negative (-) Terminal
+                    svgContent += `
+                        <circle cx="${xResistorLine}" cy="${compY}" r="3.5" fill="${resColor}"/>
+                        <line x1="${xResistorLine}" y1="${compY}" x2="${xCompLeft}" y2="${compY}" stroke="${resColor}" stroke-width="1.5" stroke-dasharray="${highlightResistors ? 'none' : '3,3'}"/>
+                        <text x="${xResistorLine + 8}" y="${compY - 5}" fill="#cbd5e1" font-family="JetBrains Mono" font-size="10">Vth${compIndex}=${vthVal.toFixed(2)}V</text>
+                    `;
+                }
+            }
+
+            // GND Bottom Node
+            svgContent += `
+                <line x1="${xResistorLine}" y1="${endY}" x2="${xResistorLine}" y2="${endY + 18}" stroke="#64748b" stroke-width="2.5"/>
+                <line x1="${xResistorLine - 12}" y1="${endY + 18}" x2="${xResistorLine + 12}" y2="${endY + 18}" stroke="#64748b" stroke-width="2.5"/>
+                <line x1="${xResistorLine - 7}" y1="${endY + 22}" x2="${xResistorLine + 7}" y2="${endY + 22}" stroke="#64748b" stroke-width="2"/>
+                <line x1="${xResistorLine - 2}" y1="${endY + 26}" x2="${xResistorLine + 2}" y2="${endY + 26}" stroke="#64748b" stroke-width="2"/>
+                <text x="${xResistorLine}" y="${endY + 38}" fill="#64748b" font-family="JetBrains Mono" font-size="10" text-anchor="middle">GND (0V)</text>
+            `;
+            svgContent += `</g>`;
+
+            // -------------------------------------------------------------
+            // 2. Analog Input Line (Vin Bus Wire)
+            // -------------------------------------------------------------
+            svgContent += `<g id="vin-bus">`;
+            svgContent += `
+                <!-- Vin Input Port -->
+                <circle cx="${xVinLine - 100}" cy="${endY + 10}" r="6" fill="#10b981" />
+                <text x="${xVinLine - 100}" y="${endY + 30}" fill="#10b981" font-family="JetBrains Mono" font-size="12" font-weight="bold" text-anchor="middle">Vin (${state.vin.toFixed(2)}V)</text>
+                <line x1="${xVinLine - 100}" y1="${endY + 10}" x2="${xVinLine}" y2="${endY + 10}" stroke="#10b981" stroke-width="2.5"/>
+                <line x1="${xVinLine}" y1="${startY + stepY - 15}" x2="${xVinLine}" y2="${endY + 10}" stroke="#10b981" stroke-width="2.5"/>
+            `;
+            svgContent += `</g>`;
+
+            // -------------------------------------------------------------
+            // 3. Comparators (コンパレータ群)
+            // -------------------------------------------------------------
+            svgContent += `<g id="comparators">`;
+            let thermometerBits = [];
+
+            for (let i = 0; i < numComparators; i++) {
+                const compIndex = numComparators - i;
+                const compY = startY + (i + 1) * stepY;
+                const vthVal = lsb * compIndex;
+                const isHigh = (state.vin >= vthVal);
+                thermometerBits.push(isHigh ? 1 : 0);
+
+                // Wire from Vin Bus to (+) terminal of comparator
+                const vinBranchY = compY + 12;
+                svgContent += `
+                    <circle cx="${xVinLine}" cy="${vinBranchY}" r="3" fill="#10b981"/>
+                    <line x1="${xVinLine}" y1="${vinBranchY}" x2="${xCompLeft}" y2="${vinBranchY}" stroke="#10b981" stroke-width="1.5"/>
+                `;
+
+                // Comparator Symbol (Triangle)
+                const fillColor = isHigh ? 'rgba(16, 185, 129, 0.15)' : 'rgba(30, 41, 59, 0.8)';
+                const strokeColor = isHigh ? '#10b981' : (highlightComparators ? '#3b82f6' : '#475569');
+                const strokeWidth = isHigh ? '2.5' : '1.5';
+
+                svgContent += `
+                    <!-- Triangle Body -->
+                    <polygon points="${xCompLeft},${compY - 12} ${xCompLeft},${compY + 24} ${xCompRight},${compY + 6}" 
+                             fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" class="${isHigh && highlightComparators ? 'pulse-active' : ''}"/>
+                    
+                    <!-- Terminals Labels -->
+                    <text x="${xCompLeft + 6}" y="${compY + 2}" fill="#f59e0b" font-family="JetBrains Mono" font-size="12" font-weight="bold">-</text>
+                    <text x="${xCompLeft + 6}" y="${compY + 18}" fill="#10b981" font-family="JetBrains Mono" font-size="12" font-weight="bold">+</text>
+                    
+                    <!-- Comparator Name Label -->
+                    <text x="${xCompLeft + 35}" y="${compY + 9}" fill="#94a3b8" font-family="JetBrains Mono" font-size="10">C${compIndex}</text>
+
+                    <!-- Output Wire & Signal Digital Value -->
+                    <line x1="${xCompRight}" y1="${compY + 6}" x2="${xEncoderLeft}" y2="${compY + 6}" 
+                          stroke="${isHigh ? '#10b981' : '#475569'}" stroke-width="${isHigh ? '2.5' : '1.5'}"/>
+                    
+                    <!-- Thermometer Bit Value Badge -->
+                    <rect x="${xCompRight + 20}" y="${compY - 6}" width="20" height="20" rx="4" 
+                          fill="${isHigh ? '#10b981' : '#1e293b'}" stroke="${isHigh ? '#059669' : '#334155'}" />
+                    <text x="${xCompRight + 30}" y="${compY + 8}" fill="${isHigh ? '#ffffff' : '#64748b'}" 
+                          font-family="JetBrains Mono" font-size="11" font-weight="bold" text-anchor="middle">${isHigh ? '1' : '0'}</text>
+                `;
+            }
+            svgContent += `</g>`;
+
+            // -------------------------------------------------------------
+            // 4. Priority Encoder (優先度エンコーダ)
+            // -------------------------------------------------------------
+            svgContent += `<g id="priority-encoder">`;
+            const encoderTopY = startY + stepY - 20;
+            const encoderBottomY = endY - stepY + 20;
+            const encoderHeight = encoderBottomY - encoderTopY;
+
+            const encBorderColor = highlightEncoder ? '#f59e0b' : '#334155';
+            const encBgColor = highlightEncoder ? 'rgba(245, 158, 11, 0.05)' : 'rgba(15, 23, 42, 0.9)';
+
+            // Encoder Box Block
+            svgContent += `
+                <rect x="${xEncoderLeft}" y="${encoderTopY}" width="${xEncoderRight - xEncoderLeft}" height="${encoderHeight}" rx="12" 
+                      fill="${encBgColor}" stroke="${encBorderColor}" stroke-width="2.5" class="${highlightEncoder ? 'pulse-active' : ''}"/>
+                
+                <text x="${(xEncoderLeft + xEncoderRight) / 2}" y="${encoderTopY + 30}" fill="#f59e0b" font-family="Inter" font-size="13" font-weight="bold" text-anchor="middle">優先度エンコーダ</text>
+                <text x="${(xEncoderLeft + xEncoderRight) / 2}" y="${encoderTopY + 46}" fill="#94a3b8" font-family="JetBrains Mono" font-size="10" text-anchor="middle">(Priority Encoder)</text>
+            `;
+
+            // Input Thermometer Code Annotation inside Encoder
+            svgContent += `
+                <text x="${xEncoderLeft + 12}" y="${encoderTopY + 75}" fill="#64748b" font-family="JetBrains Mono" font-size="10">サーモメータコード入力</text>
+            `;
+
+            // Output Binary Lines
+            const numOutBits = state.bits;
+            const digitalVal = Math.min(Math.floor(state.vin / lsb), numLevels - 1);
+            const binaryStr = digitalVal.toString(2).padStart(numOutBits, '0');
+
+            const outSpacing = (encoderHeight - 100) / (numOutBits + 1);
+
+            for (let b = 0; b < numOutBits; b++) {
+                const bitVal = binaryStr[b]; // '1' or '0'
+                const bitWeight = Math.pow(2, numOutBits - 1 - b);
+                const bitY = encoderTopY + 80 + (b + 1) * outSpacing;
+                const isBitHigh = (bitVal === '1');
+
+                const bitColor = isBitHigh ? '#3b82f6' : '#475569';
+
+                svgContent += `
+                    <!-- Output Line Wire -->
+                    <line x1="${xEncoderRight}" y1="${bitY}" x2="${xEncoderRight + 50}" y2="${bitY}" stroke="${bitColor}" stroke-width="${isBitHigh ? '3' : '1.5'}"/>
+                    
+                    <!-- Output Bit Pin Label -->
+                    <text x="${xEncoderRight - 10}" y="${bitY + 4}" fill="#94a3b8" font-family="JetBrains Mono" font-size="10" text-anchor="end">D${numOutBits - 1 - b}</text>
+                    
+                    <!-- Digital Bit Output Badge -->
+                    <rect x="${xEncoderRight + 50}" y="${bitY - 12}" width="28" height="24" rx="6" 
+                          fill="${isBitHigh ? '#2563eb' : '#1e293b'}" stroke="${isBitHigh ? '#60a5fa' : '#334155'}" />
+                    <text x="${xEncoderRight + 64}" y="${bitY + 4}" fill="${isBitHigh ? '#ffffff' : '#64748b'}" 
+                          font-family="JetBrains Mono" font-size="12" font-weight="bold" text-anchor="middle">${bitVal}</text>
+                `;
+            }
+
+            svgContent += `</g>`;
+
+            // Inject rendered SVG string into container
+            svg.innerHTML = svgContent;
+        }
+
+        function updateUI() {
+            // Label updates
+            bitVal.textContent = `${state.bits} bit (${Math.pow(2, state.bits)}階調)`;
+            vrefVal.textContent = `${state.vref.toFixed(2)} V`;
+            vinVal.textContent = `${state.vin.toFixed(2)} V`;
+
+            const numLevels = Math.pow(2, state.bits);
+            const lsb = state.vref / numLevels;
+            lsbVal.textContent = `${lsb.toFixed(3)} V`;
+
+            // Calculate Digital Output
+            const digitalVal = Math.min(Math.floor(state.vin / lsb), numLevels - 1);
+            const binaryStr = digitalVal.toString(2).padStart(state.bits, '0');
+            const reconVoltage = digitalVal * lsb;
+
+            outBinary.textContent = `${binaryStr}₂`;
+            outDecimal.textContent = `(10進数: ${digitalVal})`;
+            outVoltage.textContent = `${reconVoltage.toFixed(2)} V`;
+
+            // Refresh step text explanation & Redraw schematic
+            updateStepExplanation();
+            renderCircuit();
+        }
+
+        // Initial App Load Trigger
+        window.onload = function() {
+            updateUI();
+        };
+    </script>
+</body>
+</html>
